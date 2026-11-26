@@ -280,11 +280,12 @@ export async function fetchGstinDetails(rawGstin: string, apiKeyOverride?: strin
     console.warn('Failed reading from gstinCache:', cacheErr);
   }
 
-  // Retrieve user-configured API key from local storage or optional override
+  // Retrieve user-configured API key from local storage, optional override, env, or default active key
   const apiKey = (
     apiKeyOverride || 
     localStorage.getItem('gogst_gstin_api_key') || 
-    (import.meta.env.VITE_GSTIN_API_KEY || '')
+    (import.meta.env.VITE_GSTIN_API_KEY || '') ||
+    'gak_beec70f8156e4b1e88294c79b5f820b4'
   ).trim();
 
   // 2. If API key is provided, attempt live network lookup
@@ -299,8 +300,10 @@ export async function fetchGstinDetails(rawGstin: string, apiKeyOverride?: strin
       };
 
       if (apiKey.startsWith('gak_') || apiKey.includes('gstinapi')) {
-        // gstinapi.in provider endpoint
-        endpoint = `https://www.gstinapi.in/v1/gstin/${local.gstin}`;
+        // gstinapi.in provider endpoint: use /api/gstin proxy in browser to bypass CORS in web deployments
+        endpoint = typeof window !== 'undefined'
+          ? `/api/gstin/v1/gstin/${local.gstin}`
+          : `https://www.gstinapi.in/v1/gstin/${local.gstin}`;
         headers['x-api-key'] = apiKey;
       } else if (apiKey.startsWith('http')) {
         endpoint = apiKey.includes('{gstin}') 
@@ -312,10 +315,24 @@ export async function fetchGstinDetails(rawGstin: string, apiKeyOverride?: strin
         endpoint = `https://sheet.gstincheck.co.in/check/${apiKey}/${local.gstin}`;
       }
 
-      const response = await fetch(endpoint, {
-        signal: controller.signal,
-        headers
-      });
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          signal: controller.signal,
+          headers
+        });
+      } catch (fetchErr) {
+        // If relative proxy fetch failed, try direct URL
+        if (endpoint.startsWith('/api/gstin')) {
+          endpoint = `https://www.gstinapi.in/v1/gstin/${local.gstin}`;
+          response = await fetch(endpoint, {
+            signal: controller.signal,
+            headers
+          });
+        } else {
+          throw fetchErr;
+        }
+      }
       clearTimeout(timeoutId);
 
       if (response.ok) {
