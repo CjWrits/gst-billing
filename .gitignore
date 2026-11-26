@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Production Build Output
+dist/
+
+# Local Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# Vite temporary files
+.vite-temp/
+.vite/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.log
