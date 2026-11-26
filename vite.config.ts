@@ -10,6 +10,13 @@ export default defineConfig({
     devtoolsJson()
   ],
   server: {
-    port: 3000
+    host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
+    allowedHosts: true
+  },
+  preview: {
+    host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
+    allowedHosts: true
   }
 });
