@@ -3,12 +3,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { 
   LayoutDashboard, FileText, Users, Package, Settings, 
   Plus, Menu, X, CheckCircle2, History, LogOut, Loader2,
-  ShoppingBag, CreditCard, FileSpreadsheet, Building2
+  ShoppingBag, CreditCard, FileSpreadsheet, Building2,
+  Cloud, RefreshCw
 } from 'lucide-react';
 import { db } from './db/database';
 import { Document, DocumentType, Party, UserSession, BusinessProfile } from './types';
 import { getActiveSession, logoutUser } from './utils/auth';
 import { initializeHsnCatalog } from './utils/hsnCatalogData';
+import { isSupabaseConfigured } from './utils/supabase';
+import { syncAll, pullFromCloud, pushToCloud } from './utils/cloudSync';
 import { AuthPage } from './components/AuthPage';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceBuilder } from './components/InvoiceBuilder';
@@ -54,6 +57,22 @@ export default function App() {
   // Toast feedback state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Cloud sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    if (!session?.userId) return;
+    setIsSyncing(true);
+    try {
+      const res = await syncAll(session.userId);
+      showToast(res.message);
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Sync failed');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Check active session & initialize verified HSN catalog on initial load
   useEffect(() => {
     async function initApp() {
@@ -63,6 +82,9 @@ export default function App() {
         if (active) {
           setSession(active.session);
           setProfile(active.profile);
+          if (isSupabaseConfigured()) {
+            pullFromCloud(active.session.userId).catch(console.warn);
+          }
         }
       } catch (err) {
         console.error('Initialization failed:', err);
@@ -143,6 +165,9 @@ export default function App() {
     showToast(`Saved ${savedDoc.docType}: ${savedDoc.docNumber}`);
     setSelectedDocForPrint(savedDoc);
     setCurrentView('print');
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleSelectPartyForDoc = (party: Party) => {
@@ -416,6 +441,31 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Cloud Sync Button */}
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={isSyncing}
+              title={isSupabaseConfigured() ? 'Click to sync all data with Supabase Cloud' : 'Cloud Sync not configured (Offline Mode)'}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                isSupabaseConfigured()
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 active:scale-95'
+                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+              }`}
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isSupabaseConfigured() ? 'text-emerald-600' : 'text-slate-400'}`} />
+              {isSyncing ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                  <span>Syncing...</span>
+                </>
+              ) : isSupabaseConfigured() ? (
+                <span>Sync Cloud</span>
+              ) : (
+                <span>Offline</span>
+              )}
+            </button>
+
             {liveProfile.gstin && (
               <span className="text-xs text-slate-500 font-mono bg-slate-100/80 px-2 py-1 rounded border border-slate-200/60">
                 GSTIN: <strong className="text-slate-800">{liveProfile.gstin}</strong>

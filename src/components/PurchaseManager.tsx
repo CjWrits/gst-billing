@@ -15,6 +15,8 @@ import {
   calculateDocumentTotals, formatIndianCurrency, getStateName 
 } from '../utils/gstEngine';
 import { HsnCatalogModal } from './HsnCatalogModal';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 
 const UNIT_OPTIONS: ProductUnit[] = ['PCS', 'BOX', 'KG', 'LTR', 'SET', 'MTR', 'NOS', 'UNIT'];
 const GST_RATES: GstRate[] = [0, 5, 12, 18, 28];
@@ -386,6 +388,10 @@ export const PurchaseManager: React.FC<PurchaseManagerProps> = ({ session, profi
 
     setIsCreating(false);
     setEditingBill(null);
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleDeletePurchase = async (bill: PurchaseBill) => {
@@ -417,6 +423,10 @@ export const PurchaseManager: React.FC<PurchaseManagerProps> = ({ session, profi
         title: `Deleted Purchase Bill: ${bill.billNumber}`,
         details: `Deleted Purchase Bill ${bill.billNumber} from ${bill.partyName} (₹${bill.grandTotal.toFixed(2)}). Restored inventory stock.`
       });
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
     }
   };
 
@@ -470,6 +480,10 @@ export const PurchaseManager: React.FC<PurchaseManagerProps> = ({ session, profi
     });
 
     setPaymentModalBill(null);
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   // Filtered purchases

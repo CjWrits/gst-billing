@@ -7,6 +7,8 @@ import { db, logAudit } from '../db/database';
 import { BusinessProfile, UserSession, GstStatus } from '../types';
 import { STATE_OPTIONS, isValidGstin, getStateCodeFromGstin } from '../utils/gstEngine';
 import { fetchGstinDetails } from '../utils/gstinLookup';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 
 export interface BusinessRegistrationProps {
   session: UserSession;
@@ -374,6 +376,10 @@ export const BusinessRegistration: React.FC<BusinessRegistrationProps> = ({
       setSuccessToast(
         isSettingsMode ? 'Business Profile saved successfully!' : 'Business registered successfully!'
       );
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
 
       if (onSuccess) {
         onSuccess(profilePayload);

@@ -8,6 +8,8 @@ import {
 import { db, logAudit } from '../db/database';
 import { Product, ProductUnit, GstRate, UserSession, ProductClassification } from '../types';
 import { formatIndianCurrency } from '../utils/gstEngine';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 import { HsnCatalogModal } from './HsnCatalogModal';
 
 const UNIT_OPTIONS: ProductUnit[] = ['PCS', 'BOX', 'KG', 'LTR', 'SET', 'MTR', 'NOS', 'UNIT'];
@@ -208,6 +210,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ session }) => {
 
     setIsModalOpen(false);
     resetForm();
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleApplyStockAdjustment = async (e: React.FormEvent) => {
@@ -232,6 +238,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ session }) => {
 
     setIsAdjustModalOpen(false);
     setAdjustingProduct(null);
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -245,6 +255,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ session }) => {
         title: `Deleted Product: ${name}`,
         details: `Removed product "${name}" from inventory catalog.`
       });
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
     }
   };
 

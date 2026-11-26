@@ -7,6 +7,8 @@ import {
 import { db, logAudit } from '../db/database';
 import { Document, DocumentType, PaymentStatus, UserSession, PaymentMethod } from '../types';
 import { formatIndianCurrency, getStateName } from '../utils/gstEngine';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 
 interface DocumentListProps {
   session: UserSession;
@@ -193,6 +195,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         title: `Deleted ${doc.docType}: ${doc.docNumber}`,
         details: `Deleted ${doc.docType} ${doc.docNumber} of amount ₹${doc.grandTotal.toFixed(2)} for ${doc.partyName}. Restored inventory.`
       });
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
     }
   };
 
@@ -257,6 +263,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({
     });
 
     setPaymentModalDoc(null);
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   // Filter Logic

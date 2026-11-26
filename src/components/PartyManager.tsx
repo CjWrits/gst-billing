@@ -8,6 +8,8 @@ import { db, logAudit } from '../db/database';
 import { Party, PartyType, GstStatus, UserSession, BusinessProfile } from '../types';
 import { STATE_OPTIONS, getStateName } from '../utils/gstEngine';
 import { fetchGstinDetails, parseGstinLocally } from '../utils/gstinLookup';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 import { PartyLedgerModal } from './PartyLedgerModal';
 
 interface PartyManagerProps {
@@ -276,6 +278,10 @@ export const PartyManager: React.FC<PartyManagerProps> = ({ session, profile, on
 
     setIsModalOpen(false);
     resetForm();
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -289,6 +295,10 @@ export const PartyManager: React.FC<PartyManagerProps> = ({ session, profile, on
         title: `Deleted Party: ${name}`,
         details: `Removed party record for ${name}.`
       });
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
     }
   };
 

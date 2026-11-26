@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { 
   ShieldCheck, User, Mail, Lock, Eye, EyeOff, 
-  ArrowRight, AlertCircle, Building2 
+  ArrowRight, AlertCircle, Building2, Cloud, CloudOff, 
+  Settings2, CheckCircle2, RefreshCw
 } from 'lucide-react';
 import { registerUserAccount, loginUser } from '../utils/auth';
+import { isSupabaseConfigured, SUPABASE_URL, SUPABASE_ANON_KEY } from '../utils/supabase';
 import { UserSession, BusinessProfile } from '../types';
 
 interface AuthPageProps {
@@ -16,6 +18,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Cloud Sync setup panel toggle
+  const [showCloudConfig, setShowCloudConfig] = useState(false);
+  const [cloudUrl, setCloudUrl] = useState(SUPABASE_URL);
+  const [cloudKey, setCloudKey] = useState(SUPABASE_ANON_KEY);
+  const [cloudConfigSaved, setCloudConfigSaved] = useState(false);
+
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -25,6 +33,28 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   const [userEmail, setUserEmail] = useState('');
   const [userPassword, setUserPassword] = useState('');
   const [userConfirmPassword, setUserConfirmPassword] = useState('');
+
+  const hasCloud = isSupabaseConfigured();
+
+  // Save Cloud Credentials
+  const handleSaveCloudConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cloudUrl.trim() && cloudKey.trim()) {
+      localStorage.setItem('gogst_supabase_url', cloudUrl.trim());
+      localStorage.setItem('gogst_supabase_anon_key', cloudKey.trim());
+      setCloudConfigSaved(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 700);
+    } else {
+      localStorage.removeItem('gogst_supabase_url');
+      localStorage.removeItem('gogst_supabase_anon_key');
+      setCloudConfigSaved(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 700);
+    }
+  };
 
   // Login submission
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -95,12 +125,108 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               Indian GST Invoicing, Inward Purchases &amp; Stock Ledger Platform
             </p>
 
-            <div className="flex items-center gap-2 mt-3 text-[11px] font-medium text-slate-300 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              <span>100% Offline • Private IndexedDB Engine</span>
+            {/* Cloud Sync Status Indicator Pill */}
+            <div className="flex items-center gap-2 mt-3">
+              <div className={`flex items-center gap-2 text-[11px] font-medium px-3 py-1 rounded-full border ${
+                hasCloud 
+                  ? 'text-emerald-300 bg-emerald-950/70 border-emerald-800/80' 
+                  : 'text-slate-300 bg-slate-800/80 border-slate-700/80'
+              }`}>
+                {hasCloud ? (
+                  <>
+                    <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Cloud Sync Active • Multi-Device Ready</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="w-3.5 h-3.5 text-amber-400" />
+                    <span>100% Offline • Local Database</span>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCloudConfig(!showCloudConfig)}
+                title="Configure Multi-Device Cloud Sync"
+                className="p-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-colors"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Expandable Cloud Sync Configuration Panel */}
+        {showCloudConfig && (
+          <div className="bg-slate-900 text-white p-5 border-b border-slate-800 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold flex items-center gap-1.5 text-blue-400">
+                <Cloud className="w-4 h-4" />
+                Supabase Multi-Device Cloud Setup
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCloudConfig(false)}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-300 mb-3 leading-relaxed">
+              To log in with the same account across multiple devices or phones, connect your Supabase database.
+            </p>
+
+            <form onSubmit={handleSaveCloudConfig} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Supabase Project URL
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://xyzcompany.supabase.co"
+                  value={cloudUrl}
+                  onChange={(e) => setCloudUrl(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Supabase Publishable / Anon API Key
+                </label>
+                <input
+                  type="password"
+                  placeholder="sb_publishable_... or eyJhbGciOi..."
+                  value={cloudKey}
+                  onChange={(e) => setCloudKey(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+                {cloudKey.trim().startsWith('sb_secret_') && (
+                  <p className="text-[10px] text-amber-400 mt-1.5 flex items-start gap-1 bg-amber-950/60 border border-amber-800/80 p-2 rounded-lg">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400 mt-0.5" />
+                    <span>You pasted a <strong>Secret Key</strong> (<code>sb_secret_...</code>). Supabase blocks secret keys in browsers for security. Please copy the <strong>Publishable key</strong> (starts with <code>sb_publishable_</code> or <code>eyJ...</code>) from your Supabase dashboard.</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all"
+                >
+                  Save &amp; Reload App
+                </button>
+                {cloudConfigSaved && (
+                  <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Saved! Refreshing...
+                  </span>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="flex border-b border-slate-100 bg-slate-50/70 p-1.5">
@@ -186,8 +312,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                 disabled={isLoading}
                 className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-[0.985] flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
               >
-                {isLoading ? 'Signing In...' : 'Sign In to Dashboard'}
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In to Dashboard</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               <div className="text-center pt-2">
@@ -274,9 +409,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                 disabled={isLoading}
                 className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-[0.985] flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
               >
-                <Building2 className="w-4 h-4 text-white" />
-                <span>{isLoading ? 'Creating Account...' : 'Continue to Business Registration'}</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Creating Account...</span>
+                  </>
+                ) : (
+                  <>
+                    <Building2 className="w-4 h-4 text-white" />
+                    <span>Continue to Business Registration</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               <div className="text-center pt-2">
@@ -295,7 +439,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         {/* Footer */}
         <div className="bg-slate-50 border-t border-slate-100 p-4 text-center text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Local IndexedDB Encrypted • Zero Data Shared with Third Parties</span>
+          <span>Offline-First Engine • {hasCloud ? 'Supabase Cloud Sync Active' : 'Private Local Database'}</span>
         </div>
       </div>
     </div>

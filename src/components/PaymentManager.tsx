@@ -11,6 +11,8 @@ import {
   UserSession, BusinessProfile, Party, PaymentStatus 
 } from '../types';
 import { formatIndianCurrency } from '../utils/gstEngine';
+import { isSupabaseConfigured } from '../utils/supabase';
+import { pushToCloud } from '../utils/cloudSync';
 
 interface PaymentManagerProps {
   session: UserSession;
@@ -192,6 +194,10 @@ export const PaymentManager: React.FC<PaymentManagerProps> = ({ session, profile
     });
 
     setIsModalOpen(false);
+
+    if (isSupabaseConfigured() && session?.userId) {
+      pushToCloud(session.userId).catch(console.warn);
+    }
   };
 
   const handleDeleteTransaction = async (tx: PaymentTransaction) => {
@@ -218,6 +224,10 @@ export const PaymentManager: React.FC<PaymentManagerProps> = ({ session, profile
 
         await db.paymentTransactions.delete(tx.id);
       });
+
+      if (isSupabaseConfigured() && session?.userId) {
+        pushToCloud(session.userId).catch(console.warn);
+      }
     }
   };
 

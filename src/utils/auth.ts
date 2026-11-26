@@ -1,5 +1,7 @@
 import { db, logAudit } from '../db/database';
 import { User, UserSession, BusinessProfile, TaxScheme } from '../types';
+import { getSupabase, isSupabaseConfigured } from './supabase';
+import { pullFromCloud, pushToCloud } from './cloudSync';
 
 const SESSION_KEY = 'gogst_auth_session_token';
 
@@ -62,19 +64,44 @@ export interface RegisterInput {
 
 /**
  * Registers a new user account and creates an active session
+ * Supports cloud registration with Supabase and offline fallback
  */
 export async function registerUserAccount(name: string, email: string, password: string): Promise<{ user: User; session: UserSession }> {
   const normalizedEmail = email.trim().toLowerCase();
-
-  const existing = await db.users.where('email').equals(normalizedEmail).first();
-  if (existing) {
-    throw new Error('An account with this email address already exists. Please sign in instead.');
-  }
-
-  const userId = `usr-${Date.now()}`;
-  const salt = generateSalt();
-  const passwordHash = await hashPassword(password, salt);
+  const supabase = getSupabase();
   const now = new Date().toISOString();
+
+  let userId = `usr-${Date.now()}`;
+  let salt = generateSalt();
+  let passwordHash = await hashPassword(password, salt);
+
+  if (supabase && isSupabaseConfigured()) {
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: { name: name.trim() }
+      }
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Cloud registration failed. Please verify your details.');
+    }
+
+    if (data.user) {
+      // Check if user already existed (Supabase returns empty identities array for existing user)
+      if (data.user.identities && data.user.identities.length === 0) {
+        throw new Error('An account with this email address already exists. Please sign in instead.');
+      }
+      userId = data.user.id;
+    }
+  } else {
+    // Local DB check
+    const existing = await db.users.where('email').equals(normalizedEmail).first();
+    if (existing) {
+      throw new Error('An account with this email address already exists. Please sign in instead.');
+    }
+  }
 
   const newUser: User = {
     id: userId,
@@ -100,8 +127,8 @@ export async function registerUserAccount(name: string, email: string, password:
   };
 
   await db.transaction('rw', [db.users, db.sessions, db.historyLogs], async () => {
-    await db.users.add(newUser);
-    await db.sessions.add(newSession);
+    await db.users.put(newUser);
+    await db.sessions.put(newSession);
   });
 
   await logAudit({
@@ -123,17 +150,38 @@ export async function registerUserAccount(name: string, email: string, password:
  */
 export async function registerUser(input: RegisterInput): Promise<{ user: User; session: UserSession; profile: BusinessProfile }> {
   const normalizedEmail = input.email.trim().toLowerCase();
-
-  // Check if user already exists
-  const existing = await db.users.where('email').equals(normalizedEmail).first();
-  if (existing) {
-    throw new Error('An account with this email address already exists. Please sign in instead.');
-  }
-
-  const userId = `usr-${Date.now()}`;
-  const salt = generateSalt();
-  const passwordHash = await hashPassword(input.password, salt);
+  const supabase = getSupabase();
   const now = new Date().toISOString();
+
+  let userId = `usr-${Date.now()}`;
+  let salt = generateSalt();
+  let passwordHash = await hashPassword(input.password, salt);
+
+  if (supabase && isSupabaseConfigured()) {
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password: input.password,
+      options: {
+        data: { name: input.name.trim() }
+      }
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Registration failed.');
+    }
+
+    if (data.user) {
+      if (data.user.identities && data.user.identities.length === 0) {
+        throw new Error('An account with this email address already exists. Please sign in instead.');
+      }
+      userId = data.user.id;
+    }
+  } else {
+    const existing = await db.users.where('email').equals(normalizedEmail).first();
+    if (existing) {
+      throw new Error('An account with this email address already exists. Please sign in instead.');
+    }
+  }
 
   const newUser: User = {
     id: userId,
@@ -179,7 +227,7 @@ export async function registerUser(input: RegisterInput): Promise<{ user: User; 
     pincode,
     city,
     address: fullAddress,
-    stateCode: input.business.stateCode || '08',
+    stateCode: input.business.stateCode || '09',
     bankName: input.business.bankName.trim(),
     accountNumber: input.business.accountNumber.trim(),
     ifscCode: input.business.ifscCode.trim().toUpperCase(),
@@ -193,7 +241,7 @@ export async function registerUser(input: RegisterInput): Promise<{ user: User; 
   };
 
   const token = generateToken();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const newSession: UserSession = {
     token,
@@ -205,10 +253,19 @@ export async function registerUser(input: RegisterInput): Promise<{ user: User; 
   };
 
   await db.transaction('rw', [db.users, db.businessProfile, db.sessions, db.historyLogs], async () => {
-    await db.users.add(newUser);
-    await db.businessProfile.add(newProfile);
-    await db.sessions.add(newSession);
+    await db.users.put(newUser);
+    await db.businessProfile.put(newProfile);
+    await db.sessions.put(newSession);
   });
+
+  // If cloud is enabled, push the newly created profile to cloud
+  if (supabase && isSupabaseConfigured()) {
+    try {
+      await pushToCloud(userId);
+    } catch (syncErr) {
+      console.warn('Initial cloud profile push had warning:', syncErr);
+    }
+  }
 
   await logAudit({
     userId,
@@ -225,10 +282,93 @@ export async function registerUser(input: RegisterInput): Promise<{ user: User; 
 }
 
 /**
- * Authenticates user credentials and creates a session
+ * Authenticates user credentials and creates a session.
+ * On multi-device cloud sync: authenticates with Supabase, syncs user into local DB,
+ * and downloads all cloud business data to this device.
  */
 export async function loginUser(email: string, password: string): Promise<{ user: User; session: UserSession; profile: BusinessProfile | null }> {
   const normalizedEmail = email.trim().toLowerCase();
+  const supabase = getSupabase();
+  const now = new Date().toISOString();
+
+  let userId: string;
+  let userName = '';
+
+  if (supabase && isSupabaseConfigured()) {
+    // 1. Cloud Authentication via Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password
+    });
+
+    if (error) {
+      if (error.message?.includes('Invalid login credentials')) {
+        throw new Error('Incorrect email or password. Please verify your credentials.');
+      }
+      throw new Error(error.message || 'Login failed.');
+    }
+
+    if (!data.user) {
+      throw new Error('No account found with this email. Please register first.');
+    }
+
+    userId = data.user.id;
+    userName = data.user.user_metadata?.name || normalizedEmail.split('@')[0];
+
+    // Ensure user exists in local Dexie database
+    let localUser = await db.users.get(userId);
+    if (!localUser) {
+      localUser = {
+        id: userId,
+        name: userName,
+        email: normalizedEmail,
+        passwordHash: '',
+        salt: '',
+        role: 'owner',
+        createdAt: data.user.created_at || now,
+        lastLoginAt: now
+      };
+      await db.users.put(localUser);
+    } else {
+      await db.users.update(userId, { lastLoginAt: now });
+    }
+
+    // Pull all cloud records for this user to this device!
+    try {
+      await pullFromCloud(userId);
+    } catch (syncErr) {
+      console.warn('Background pull during login had warning:', syncErr);
+    }
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const session: UserSession = {
+      token,
+      userId,
+      email: normalizedEmail,
+      name: localUser.name,
+      createdAt: now,
+      expiresAt
+    };
+
+    await db.sessions.put(session);
+    localStorage.setItem(SESSION_KEY, token);
+
+    const profile = (await db.businessProfile.where('userId').equals(userId).first()) || null;
+
+    await logAudit({
+      userId,
+      action: 'USER_LOGIN',
+      entityType: 'AUTH',
+      entityId: userId,
+      title: 'Cloud Sign In',
+      details: `${localUser.name} signed into device via Cloud Authentication.`
+    });
+
+    return { user: localUser, session, profile };
+  }
+
+  // 2. Offline / Local fallback if Supabase is not configured
   const user = await db.users.where('email').equals(normalizedEmail).first();
 
   if (!user) {
@@ -242,7 +382,6 @@ export async function loginUser(email: string, password: string): Promise<{ user
 
   const profile = (await db.businessProfile.where('userId').equals(user.id).first()) || null;
 
-  const now = new Date().toISOString();
   await db.users.update(user.id, { lastLoginAt: now });
 
   const token = generateToken();
@@ -257,7 +396,7 @@ export async function loginUser(email: string, password: string): Promise<{ user
     expiresAt
   };
 
-  await db.sessions.add(session);
+  await db.sessions.put(session);
   localStorage.setItem(SESSION_KEY, token);
 
   await logAudit({
@@ -266,7 +405,7 @@ export async function loginUser(email: string, password: string): Promise<{ user
     entityType: 'AUTH',
     entityId: user.id,
     title: 'User Signed In',
-    details: `${user.name} (${user.email}) logged into ${profile ? profile.name : 'GoGST Bill (Setup Pending)'}.`
+    details: `${user.name} (${user.email}) logged in locally.`
   });
 
   return { user, session, profile };
@@ -311,6 +450,15 @@ export async function logoutUser(userId?: string): Promise<void> {
   if (token) {
     await db.sessions.delete(token);
     localStorage.removeItem(SESSION_KEY);
+  }
+
+  const supabase = getSupabase();
+  if (supabase && isSupabaseConfigured()) {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Supabase sign out error:', e);
+    }
   }
 
   if (userId) {
