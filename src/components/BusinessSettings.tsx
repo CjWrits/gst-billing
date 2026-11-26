@@ -13,7 +13,7 @@ import {
   exportDatabaseBackup, restoreDatabaseFromJson 
 } from '../utils/gstrExport';
 import { fetchGstinDetails } from '../utils/gstinLookup';
-import { isSupabaseConfigured, SUPABASE_URL, SUPABASE_ANON_KEY } from '../utils/supabase';
+import { isSupabaseConfigured } from '../utils/supabase';
 import { syncAll } from '../utils/cloudSync';
 import { BusinessRegistration } from './BusinessRegistration';
 
@@ -43,27 +43,8 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ session, onL
 
   // Supabase Cloud Sync Configuration State
   const hasCloud = isSupabaseConfigured();
-  const [supabaseUrl, setSupabaseUrl] = useState(() => SUPABASE_URL);
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => SUPABASE_ANON_KEY);
-  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
-  const [cloudSaveSuccess, setCloudSaveSuccess] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ success: boolean; message: string } | null>(null);
-
-  const handleSaveCloudConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (supabaseUrl.trim() && supabaseAnonKey.trim()) {
-      localStorage.setItem('gogst_supabase_url', supabaseUrl.trim());
-      localStorage.setItem('gogst_supabase_anon_key', supabaseAnonKey.trim());
-    } else {
-      localStorage.removeItem('gogst_supabase_url');
-      localStorage.removeItem('gogst_supabase_anon_key');
-    }
-    setCloudSaveSuccess(true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 800);
-  };
 
   const handleTriggerSync = async () => {
     setIsSyncing(true);
@@ -373,90 +354,6 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ session, onL
             <span>{syncStatus.message}</span>
           </div>
         )}
-
-        {/* Cloud Credentials Form */}
-        <form onSubmit={handleSaveCloudConfig} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 font-heading">
-                Supabase Project URL
-              </label>
-              <input
-                type="url"
-                placeholder="https://xyzcompany.supabase.co"
-                value={supabaseUrl}
-                onChange={(e) => setSupabaseUrl(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 font-heading">
-                Supabase Publishable / Anon API Key
-              </label>
-              <div className="relative">
-                <input
-                  type={showSupabaseKey ? 'text' : 'password'}
-                  placeholder="sb_publishable_... or eyJhbGciOi..."
-                  value={supabaseAnonKey}
-                  onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                  className="w-full pl-3 pr-10 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSupabaseKey(!showSupabaseKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showSupabaseKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {supabaseAnonKey.trim().startsWith('sb_secret_') && (
-                <p className="text-[11px] text-amber-700 mt-1.5 flex items-start gap-1.5 bg-amber-50 border border-amber-200 p-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                  <span>You entered a <strong>Secret Key</strong> (<code>sb_secret_...</code>). Supabase blocks secret keys in browsers for safety. Please copy the <strong>Publishable key</strong> (starts with <code>sb_publishable_</code> or <code>eyJ...</code>) from your Supabase dashboard.</span>
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all active:scale-[0.985]"
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span>Save Cloud Settings &amp; Reload</span>
-            </button>
-
-            {cloudSaveSuccess && (
-              <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                <Check className="w-4 h-4" />
-                Settings saved! Reloading application...
-              </span>
-            )}
-
-            {hasCloud && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSupabaseUrl('');
-                  setSupabaseAnonKey('');
-                  localStorage.removeItem('gogst_supabase_url');
-                  localStorage.removeItem('gogst_supabase_anon_key');
-                  window.location.reload();
-                }}
-                className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1"
-              >
-                Disconnect Cloud
-              </button>
-            )}
-          </div>
-
-          <div className="p-3 bg-blue-50/70 border border-blue-200/60 rounded-xl text-[11px] text-blue-900 leading-relaxed">
-            <strong>Initial Setup Guide:</strong> In your Supabase Dashboard, open <strong>SQL Editor</strong> and execute the provided 
-            <code className="mx-1 px-1.5 py-0.5 bg-blue-100 rounded text-blue-800 font-mono">supabase_schema.sql</code> script. It automatically configures Row-Level Security (RLS) so your invoices and accounts are strictly isolated and private.
-          </div>
-        </form>
       </div>
 
       {/* Section 4: Data Exports & Backup / Restore */}
